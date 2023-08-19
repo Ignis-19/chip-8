@@ -1,6 +1,7 @@
 use crate::mem::Mem;
 use std::{io::Error, path::Path};
 
+pub const OPCODE_SIZE: u16 = 2;
 pub const SCREEN_WIDTH: usize = 64;
 pub const SCREEN_HEIGHT: usize = 32;
 pub const START_ADDRESS: usize = 0x200;
@@ -27,15 +28,14 @@ impl Cpu {
         Self {
             pc: START_ADDRESS as u16,
             ram,
+            display: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             ..Default::default()
         }
     }
 
-    pub fn run(&mut self) {
-        loop {
-            let opcode = self.fetch();
-            // TODO: decode() & execute()
-        }
+    pub fn tick(&mut self) {
+        let opcode = self.fetch();
+        // TODO: decode() & execute()
     }
 
     pub fn reset(&mut self) {
@@ -48,6 +48,7 @@ impl Cpu {
         self.delay_timer = 0;
         self.sound_timer = 0;
         self.keypad = [false; 16];
+        self.clear_display();
     }
 
     pub fn load_rom(&mut self, path: &Path) -> Result<(), Error> {
@@ -58,19 +59,173 @@ impl Cpu {
         Ok(())
     }
 
+    pub fn tick_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
+    }
+
+    pub fn display(&self) -> &[bool] {
+        &self.display
+    }
+
+    pub fn key_press(&mut self, key: usize) {
+        self.keypad[key] = true;
+    }
+
+    pub fn key_release(&mut self, key: usize) {
+        self.keypad[key] = false;
+    }
+
     fn fetch(&mut self) -> u16 {
         let op = self.ram.read_u16(self.pc);
-        self.pc += 2;
+        self.pc += OPCODE_SIZE;
 
         op
     }
 
-    fn push(&mut self, value: u16) {
+    fn skip_next_instruction(&mut self) {
+        self.pc += OPCODE_SIZE;
+    }
+
+    pub fn clear_display(&mut self) {
+        self.op_00e0();
+    }
+
+    // CLS
+    fn op_00e0(&mut self) {
+        for pixel in self.display.iter_mut() {
+            *pixel = false;
+        }
+    }
+
+    // RET
+    fn op_00ee(&mut self) {
+        self.pc = self.stack_pop();
+    }
+
+    // JP addr
+    fn op_1nnn(&mut self, addr: u16) {
+        self.pc = addr;
+    }
+
+    // CALL addr
+    fn op_2nnn(&mut self, addr: u16) {
+        self.stack_push(self.pc);
+        self.pc = addr;
+    }
+
+    // SE Vx, byte
+    fn op_3xnn(&mut self, x: usize, byte: u8) {
+        if self.v_reg[x] == byte {
+            self.skip_next_instruction();
+        };
+    }
+
+    // SNE Vx, byte
+    fn op_4xnn(&mut self, x: usize, byte: u8) {
+        if self.v_reg[x] != byte {
+            self.skip_next_instruction();
+        };
+    }
+
+    // SE Vx, Vy
+    fn op_5xy0(&mut self, x: usize, y: usize) {
+        if self.v_reg[x] == self.v_reg[y] {
+            self.skip_next_instruction();
+        };
+    }
+
+    // LD Vx, byte
+    fn op_6xnn(&mut self, x: usize, byte: u8) {
+        self.v_reg[x] = byte;
+    }
+
+    // ADD Vx, byte
+    fn op_7xnn(&mut self, x: usize, byte: u8) {
+        self.v_reg[x] = self.v_reg[x].wrapping_add(byte);
+    }
+
+    // LD Vx, Vy
+    fn op_8xy0(&mut self, x: usize, y: usize) {
+        self.v_reg[x] = self.v_reg[y];
+    }
+
+    // OR Vx, Vy
+    fn op_8xy1(&mut self, x: usize, y: usize) {
+        self.v_reg[x] |= self.v_reg[y];
+    }
+
+    // AND Vx, Vy
+    fn op_8xy2(&mut self, x: usize, y: usize) {
+        self.v_reg[x] &= self.v_reg[y];
+    }
+
+    // XOR Vx, Vy
+    fn op_8xy3(&mut self, x: usize, y: usize) {
+        self.v_reg[x] ^= self.v_reg[y];
+    }
+
+    // ADD Vx, Vy
+    fn op_8xy4(&mut self, x: usize, y: usize) {
+        match self.v_reg[x].checked_add(self.v_reg[y]) {
+            Some(value) => {
+                self.v_reg[x] = value;
+                self.v_reg[0xF] = 0;
+            }
+            None => {
+                self.v_reg[x] = self.v_reg[x].wrapping_add(self.v_reg[y]);
+                self.v_reg[0xF] = 1;
+            }
+        };
+    }
+
+    // SUB Vx, Vy
+    fn op_8xy5(&mut self, x: usize, y: usize) {
+        self.v_reg[0xF] = if self.v_reg[x] > self.v_reg[y] { 1 } else { 0 };
+        self.v_reg[x] = self.v_reg[x].wrapping_sub(self.v_reg[y]);
+    }
+
+    fn decode(&mut self, opcode: u16) {
+        let nibbles = extract_nibbles(opcode);
+
+        // param extraction
+        let x = nibbles.1 as usize;
+        let y = nibbles.2 as usize;
+        let n = (opcode & 0xF) as u8;
+        let nn = (opcode & 0xFF) as u8;
+        let nnn = opcode & 0xFFF;
+
+        match nibbles {
+            (0x0, 0x0, 0xE, 0x0) => self.op_00e0(),
+            (0x0, 0x0, 0xE, 0xE) => self.op_00ee(),
+            (0x1, _, _, _) => self.op_1nnn(nnn),
+            (0x2, _, _, _) => self.op_2nnn(nnn),
+            (0x3, _, _, _) => self.op_3xnn(x, nn),
+            (0x4, _, _, _) => self.op_4xnn(x, nn),
+            (0x5, _, _, 0x0) => self.op_5xy0(x, y),
+            (0x6, _, _, _) => self.op_6xnn(x, nn),
+            (0x7, _, _, _) => self.op_7xnn(x, nn),
+            (0x8, _, _, 0x0) => self.op_8xy0(x, y),
+            (0x8, _, _, 0x1) => self.op_8xy1(x, y),
+            (0x8, _, _, 0x2) => self.op_8xy2(x, y),
+            (0x8, _, _, 0x3) => self.op_8xy3(x, y),
+            (0x8, _, _, 0x4) => self.op_8xy4(x, y),
+            (0x8, _, _, 0x5) => self.op_8xy5(x, y),
+            _ => (),
+        }
+    }
+
+    fn stack_push(&mut self, value: u16) {
         self.stack[self.stack_pointer as usize] = value;
         self.stack_pointer += 1;
     }
 
-    fn pop(&mut self, value: u16) -> u16 {
+    fn stack_pop(&mut self) -> u16 {
         self.stack_pointer -= 1;
         self.stack[self.stack_pointer as usize]
     }
@@ -80,4 +235,13 @@ impl Default for Cpu {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn extract_nibbles(word: u16) -> (u8, u8, u8, u8) {
+    let nibble_1 = ((word & 0xF000) >> 12) as u8;
+    let nibble_2 = ((word & 0xF00) as u8 >> 8) as u8;
+    let nibble_3 = ((word & 0xF0) as u8 >> 4) as u8;
+    let nibble_4 = (word & 0xF) as u8;
+
+    (nibble_1, nibble_2, nibble_3, nibble_4)
 }

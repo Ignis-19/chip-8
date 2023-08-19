@@ -1,5 +1,6 @@
 use crate::cpu::START_ADDRESS;
 use crate::font::FONT_SPRITE;
+
 pub const MEM_SIZE: usize = 4096;
 
 pub struct Mem {
