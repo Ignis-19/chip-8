@@ -1,3 +1,4 @@
+use crate::cpu::START_ADDRESS;
 use crate::font::FONT_SPRITE;
 pub const MEM_SIZE: usize = 4096;
 
@@ -13,11 +14,11 @@ impl Mem {
     }
 
     pub fn load_font(&mut self) {
-        self.memory[0..0x50].copy_from_slice(&FONT_SPRITE);
+        self.memory[0..FONT_SPRITE.len()].copy_from_slice(&FONT_SPRITE);
     }
 
     pub fn load_program(&mut self, program: &[u8]) {
-        let (_reserved, memory) = self.memory.split_at_mut(0x200);
+        let (_reserved, memory) = self.memory.split_at_mut(START_ADDRESS);
         memory[0..program.len()].copy_from_slice(program);
     }
 
