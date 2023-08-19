@@ -59,13 +59,15 @@ impl Cpu {
     }
 
     fn fetch(&mut self) -> u16 {
+        let op = self.ram.read_u16(self.pc);
         self.pc += 2;
-        self.ram.read_u16(self.pc)
+
+        op
     }
 
     fn push(&mut self, value: u16) {
-        self.stack_pointer += 1;
         self.stack[self.stack_pointer as usize] = value;
+        self.stack_pointer += 1;
     }
 
     fn pop(&mut self, value: u16) -> u16 {
