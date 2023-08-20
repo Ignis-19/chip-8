@@ -23,26 +23,36 @@ impl Mem {
         memory[0..program.len()].copy_from_slice(program);
     }
 
-    pub fn read(&self, address: u16) -> u8 {
-        self.memory[address as usize]
+    pub fn read(&self, addr: u16, length: usize) -> Vec<u8> {
+        let start = addr as usize;
+        let end = start + length;
+        let mut bytes = Vec::new();
+
+        self.memory[start..end].clone_into(&mut bytes);
+
+        bytes
     }
 
-    pub fn write(&mut self, address: u16, value: u8) {
-        self.memory[address as usize] = value;
+    pub fn read_u8(&self, addr: u16) -> u8 {
+        self.memory[addr as usize]
     }
 
-    pub fn read_u16(&self, address: u16) -> u16 {
+    pub fn write_u8(&mut self, addr: u16, value: u8) {
+        self.memory[addr as usize] = value;
+    }
+
+    pub fn read_u16(&self, addr: u16) -> u16 {
         let mut word = [0u8; 2];
-        let addr = address as usize;
+        let addr = addr as usize;
 
         word.copy_from_slice(&self.memory[addr..addr + 2]);
 
         u16::from_be_bytes(word)
     }
 
-    pub fn write_u16(&mut self, address: u16, value: u16) {
+    pub fn write_u16(&mut self, addr: u16, value: u16) {
         let word = value.to_be_bytes();
-        let addr = address as usize;
+        let addr = addr as usize;
 
         self.memory[addr..addr + 2].copy_from_slice(&word);
     }

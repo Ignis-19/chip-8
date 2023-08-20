@@ -190,13 +190,89 @@ impl Cpu {
         self.v_reg[x] = self.v_reg[x].wrapping_sub(self.v_reg[y]);
     }
 
+    // SHR Vx, _Vy
+    fn op_8xy6(&mut self, x: usize, _y: usize) {
+        // self.v_reg[x] = self.v_reg[_y];
+        self.v_reg[0xF] = self.v_reg[x] & 0b0000_0001;
+
+        self.v_reg[x] >>= 1;
+    }
+
+    // SUBN Vx, Vy
+    fn op_8xy7(&mut self, x: usize, y: usize) {
+        self.v_reg[0xF] = if self.v_reg[y] > self.v_reg[x] { 1 } else { 0 };
+        self.v_reg[x] = self.v_reg[y].wrapping_sub(self.v_reg[x]);
+    }
+
+    // SHL Vx, _Vy
+    fn op_8xye(&mut self, x: usize, _y: usize) {
+        // self.v_reg[x] = self.v_reg[_y];
+        self.v_reg[0xF] = if self.v_reg[x] >= 0b1000_0000 { 1 } else { 0 };
+
+        self.v_reg[x] <<= 1;
+    }
+
+    // SNE Vx, Vy
+    fn op_9xy0(&mut self, x: usize, y: usize) {
+        if self.v_reg[x] != self.v_reg[y] {
+            self.skip_next_instruction();
+        }
+    }
+
+    // LD I, addr
+    fn op_annn(&mut self, addr: u16) {
+        self.i_reg = addr;
+    }
+
+    // JP V0, addr
+    fn op_bnnn(&mut self, addr: u16) {
+        self.pc = addr + self.v_reg[0x0] as u16;
+    }
+
+    // RND Vx, byte
+    fn op_cxnn(&mut self, x: usize, byte: u8) {
+        let random = rand::random::<u8>();
+
+        self.v_reg[x] = random & byte;
+    }
+
+    // DRW Vx, Vy, nibble
+    fn op_dxyn(&mut self, x: usize, y: usize, nibble: usize) {
+        let offset_x = self.v_reg[x] as usize % SCREEN_WIDTH;
+        let offset_y = self.v_reg[y] as usize % SCREEN_HEIGHT;
+
+        self.v_reg[0xF] = 0;
+
+        let sprite = self.ram.read(self.i_reg, nibble);
+        for (i, row) in sprite.iter().enumerate() {
+            if offset_y + i >= SCREEN_HEIGHT {
+                break;
+            }
+
+            for j in 0..8 {
+                if offset_x + j >= SCREEN_WIDTH {
+                    break;
+                }
+
+                let pixel = row & (0b1000_0000 >> j) != 0;
+                let pos = (offset_y + i) * SCREEN_WIDTH + (offset_x + j);
+
+                if self.display[pos] && pixel {
+                    self.v_reg[0xF] = 1;
+                }
+
+                self.display[pos] ^= pixel;
+            }
+        }
+    }
+
     fn decode(&mut self, opcode: u16) {
         let nibbles = extract_nibbles(opcode);
 
         // param extraction
         let x = nibbles.1 as usize;
         let y = nibbles.2 as usize;
-        let n = (opcode & 0xF) as u8;
+        let n = nibbles.3 as usize;
         let nn = (opcode & 0xFF) as u8;
         let nnn = opcode & 0xFFF;
 
@@ -216,6 +292,13 @@ impl Cpu {
             (0x8, _, _, 0x3) => self.op_8xy3(x, y),
             (0x8, _, _, 0x4) => self.op_8xy4(x, y),
             (0x8, _, _, 0x5) => self.op_8xy5(x, y),
+            (0x8, _, _, 0x6) => self.op_8xy6(x, y),
+            (0x8, _, _, 0x7) => self.op_8xy7(x, y),
+            (0x9, _, _, 0x0) => self.op_9xy0(x, y),
+            (0xA, _, _, _) => self.op_annn(nnn),
+            (0xB, _, _, _) => self.op_bnnn(nnn),
+            (0xC, _, _, _) => self.op_cxnn(x, nn),
+            (0xD, _, _, _) => self.op_dxyn(x, y, n),
             _ => (),
         }
     }
@@ -239,8 +322,8 @@ impl Default for Cpu {
 
 fn extract_nibbles(word: u16) -> (u8, u8, u8, u8) {
     let nibble_1 = ((word & 0xF000) >> 12) as u8;
-    let nibble_2 = ((word & 0xF00) as u8 >> 8) as u8;
-    let nibble_3 = ((word & 0xF0) as u8 >> 4) as u8;
+    let nibble_2 = ((word & 0xF00) >> 8) as u8;
+    let nibble_3 = ((word & 0xF0) >> 4) as u8;
     let nibble_4 = (word & 0xF) as u8;
 
     (nibble_1, nibble_2, nibble_3, nibble_4)
