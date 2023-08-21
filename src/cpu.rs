@@ -1,10 +1,11 @@
+use crate::font::FONT_ADDRESS;
 use crate::mem::Mem;
 use std::{io::Error, path::Path};
 
 pub const OPCODE_SIZE: u16 = 2;
+pub const START_ADDRESS: u16 = 0x200;
 pub const SCREEN_WIDTH: usize = 64;
 pub const SCREEN_HEIGHT: usize = 32;
-pub const START_ADDRESS: usize = 0x200;
 
 #[allow(unused)]
 pub struct Cpu {
@@ -26,7 +27,7 @@ impl Cpu {
         ram.load_font();
 
         Self {
-            pc: START_ADDRESS as u16,
+            pc: START_ADDRESS,
             ram,
             display: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             ..Default::default()
@@ -35,11 +36,11 @@ impl Cpu {
 
     pub fn tick(&mut self) {
         let opcode = self.fetch();
-        // TODO: decode() & execute()
+        self.process(opcode);
     }
 
     pub fn reset(&mut self) {
-        self.pc = START_ADDRESS as u16;
+        self.pc = START_ADDRESS;
         self.ram = Mem::new();
         self.ram.load_font();
         self.stack_pointer = 0;
@@ -82,7 +83,7 @@ impl Cpu {
     }
 
     fn fetch(&mut self) -> u16 {
-        let op = self.ram.read_u16(self.pc);
+        let op = self.ram.read_opcode(self.pc);
         self.pc += OPCODE_SIZE;
 
         op
@@ -266,7 +267,78 @@ impl Cpu {
         }
     }
 
-    fn decode(&mut self, opcode: u16) {
+    // SKP Vx
+    fn op_ex9e(&mut self, x: usize) {
+        if self.keypad[self.v_reg[x] as usize] {
+            self.skip_next_instruction();
+        }
+    }
+
+    // SKNP Vx
+    fn op_exa1(&mut self, x: usize) {
+        if !self.keypad[self.v_reg[x] as usize] {
+            self.skip_next_instruction();
+        }
+    }
+
+    // LD Vx, DT
+    fn op_fx07(&mut self, x: usize) {
+        self.v_reg[x] = self.delay_timer;
+    }
+
+    // LD Vx, K
+    fn op_fx0a(&mut self, x: usize) {
+        match self.keypad.iter().position(|key| *key) {
+            Some(key_index) => self.v_reg[x] = key_index as u8,
+            None => self.pc -= OPCODE_SIZE,
+        }
+    }
+
+    // LD DT, Vx
+    fn op_fx15(&mut self, x: usize) {
+        self.delay_timer = self.v_reg[x];
+    }
+
+    // LD ST, Vx
+    fn op_fx18(&mut self, x: usize) {
+        self.sound_timer = self.v_reg[x];
+    }
+
+    // ADD I, Vx
+    fn op_fx1e(&mut self, x: usize) {
+        self.i_reg += self.v_reg[x] as u16;
+    }
+
+    // LD F, Vx
+    fn op_fx29(&mut self, x: usize) {
+        // font located in 0x50
+        // each sprite is 5 byte long
+        self.i_reg = FONT_ADDRESS + ((self.v_reg[x] & 0xF) * 5) as u16;
+    }
+
+    // LD B, Vx
+    fn op_fx33(&mut self, x: usize) {
+        let num = self.v_reg[x];
+
+        // BCD Conversion
+        let byte1 = num / 100;
+        let byte2 = (num / 10) % 10;
+        let byte3 = num % 10;
+
+        self.ram.write(self.i_reg, &[byte1, byte2, byte3]);
+    }
+    // LD [I], Vx
+    fn op_fx55(&mut self, x: usize) {
+        self.ram.write(self.i_reg, &self.v_reg[0..=x]);
+    }
+
+    // LD Vx, [I]
+    fn op_fx65(&mut self, x: usize) {
+        let src = self.ram.read(self.i_reg, x + 1);
+        self.v_reg[0..=x].copy_from_slice(src);
+    }
+
+    fn process(&mut self, opcode: u16) {
         let nibbles = extract_nibbles(opcode);
 
         // param extraction
@@ -299,6 +371,17 @@ impl Cpu {
             (0xB, _, _, _) => self.op_bnnn(nnn),
             (0xC, _, _, _) => self.op_cxnn(x, nn),
             (0xD, _, _, _) => self.op_dxyn(x, y, n),
+            (0xE, _, 0x9, 0xE) => self.op_ex9e(x),
+            (0xE, _, 0xA, 0x1) => self.op_exa1(x),
+            (0xF, _, 0x0, 0x7) => self.op_fx07(x),
+            (0xF, _, 0x0, 0xA) => self.op_fx0a(x),
+            (0xF, _, 0x1, 0x5) => self.op_fx15(x),
+            (0xF, _, 0x1, 0x8) => self.op_fx18(x),
+            (0xF, _, 0x1, 0xE) => self.op_fx1e(x),
+            (0xF, _, 0x2, 0x9) => self.op_fx29(x),
+            (0xF, _, 0x3, 0x3) => self.op_fx33(x),
+            (0xF, _, 0x5, 0x5) => self.op_fx55(x),
+            (0xF, _, 0x6, 0x5) => self.op_fx65(x),
             _ => (),
         }
     }
