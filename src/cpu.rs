@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::font::FONT_ADDRESS;
 use crate::mem::Mem;
 use std::{io::Error, path::Path};
@@ -7,7 +9,6 @@ pub const START_ADDRESS: u16 = 0x200;
 pub const SCREEN_WIDTH: usize = 64;
 pub const SCREEN_HEIGHT: usize = 32;
 
-#[allow(unused)]
 pub struct Cpu {
     pc: u16,
     ram: Mem,
@@ -29,8 +30,14 @@ impl Cpu {
         Self {
             pc: START_ADDRESS,
             ram,
+            stack: [0; 16],
+            stack_pointer: 0,
+            i_reg: 0,
+            v_reg: [0; 16],
+            delay_timer: 0,
+            sound_timer: 0,
             display: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
-            ..Default::default()
+            keypad: [false; 16],
         }
     }
 
@@ -208,7 +215,7 @@ impl Cpu {
     // SHL Vx, _Vy
     fn op_8xye(&mut self, x: usize, _y: usize) {
         // self.v_reg[x] = self.v_reg[_y];
-        self.v_reg[0xF] = if self.v_reg[x] >= 0b1000_0000 { 1 } else { 0 };
+        self.v_reg[0xF] = (self.v_reg[x] & 0b1000_0000) >> 7;
 
         self.v_reg[x] <<= 1;
     }
@@ -245,7 +252,7 @@ impl Cpu {
         self.v_reg[0xF] = 0;
 
         let sprite = self.ram.read(self.i_reg, nibble);
-        for (i, row) in sprite.iter().enumerate() {
+        for (i, pixel_row) in sprite.iter().enumerate() {
             if offset_y + i >= SCREEN_HEIGHT {
                 break;
             }
@@ -255,7 +262,7 @@ impl Cpu {
                     break;
                 }
 
-                let pixel = row & (0b1000_0000 >> j) != 0;
+                let pixel = pixel_row & (0b1000_0000 >> j) != 0;
                 let pos = (offset_y + i) * SCREEN_WIDTH + (offset_x + j);
 
                 if self.display[pos] && pixel {
@@ -327,6 +334,7 @@ impl Cpu {
 
         self.ram.write(self.i_reg, &[byte1, byte2, byte3]);
     }
+
     // LD [I], Vx
     fn op_fx55(&mut self, x: usize) {
         self.ram.write(self.i_reg, &self.v_reg[0..=x]);
@@ -366,6 +374,7 @@ impl Cpu {
             (0x8, _, _, 0x5) => self.op_8xy5(x, y),
             (0x8, _, _, 0x6) => self.op_8xy6(x, y),
             (0x8, _, _, 0x7) => self.op_8xy7(x, y),
+            (0x8, _, _, 0xE) => self.op_8xye(x, y),
             (0x9, _, _, 0x0) => self.op_9xy0(x, y),
             (0xA, _, _, _) => self.op_annn(nnn),
             (0xB, _, _, _) => self.op_bnnn(nnn),
@@ -397,12 +406,6 @@ impl Cpu {
     }
 }
 
-impl Default for Cpu {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 fn extract_nibbles(word: u16) -> (u8, u8, u8, u8) {
     let nibble_1 = ((word & 0xF000) >> 12) as u8;
     let nibble_2 = ((word & 0xF00) >> 8) as u8;
@@ -411,3 +414,6 @@ fn extract_nibbles(word: u16) -> (u8, u8, u8, u8) {
 
     (nibble_1, nibble_2, nibble_3, nibble_4)
 }
+
+#[cfg(test)]
+mod tests;
