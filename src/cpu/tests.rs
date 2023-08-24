@@ -19,7 +19,7 @@ fn test_00e0() {
 }
 
 #[test]
-fn op_00ee() {
+fn test_00ee() {
     let mut cpu = set_up_cpu(&[0x00, 0xEE]);
     cpu.stack_push(599);
 

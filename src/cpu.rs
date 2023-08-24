@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::font::FONT_ADDRESS;
 use crate::mem::Mem;
 use std::{io::Error, path::Path};
@@ -20,6 +18,7 @@ pub struct Cpu {
     sound_timer: u8,
     display: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
     keypad: [bool; 16],
+    pub draw_flag: bool,
 }
 
 impl Cpu {
@@ -38,6 +37,7 @@ impl Cpu {
             sound_timer: 0,
             display: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             keypad: [false; 16],
+            draw_flag: true,
         }
     }
 
@@ -109,6 +109,8 @@ impl Cpu {
         for pixel in self.display.iter_mut() {
             *pixel = false;
         }
+
+        self.draw_flag = true;
     }
 
     // RET
@@ -272,6 +274,8 @@ impl Cpu {
                 self.display[pos] ^= pixel;
             }
         }
+
+        self.draw_flag = true;
     }
 
     // SKP Vx
