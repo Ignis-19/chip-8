@@ -2,7 +2,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 mod cpu;
 mod font;
@@ -14,7 +14,7 @@ const WINDOW_WIDTH: u32 = cpu::SCREEN_WIDTH as u32 * SCALE;
 const WINDOW_HEIGHT: u32 = cpu::SCREEN_HEIGHT as u32 * SCALE;
 const BG_COLOR: Color = Color::RGB(49, 57, 66);
 const FG_COLOR: Color = Color::RGB(216, 222, 233);
-const FRAME_RATE: Duration = Duration::new(0, 1_000_000_000 / 60);
+const DELAY_TIME: Duration = Duration::new(0, 1_000_000_000 / 60);
 
 fn main() {
     let sdl_ctx = sdl2::init().unwrap();
@@ -40,6 +40,8 @@ fn main() {
         .unwrap_or_else(|err| show_error_message(&err.to_string(), canvas.window()));
 
     'emu: loop {
+        let start = Instant::now();
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'emu,
@@ -77,7 +79,10 @@ fn main() {
         }
 
         cpu.tick_timers();
-        ::std::thread::sleep(FRAME_RATE);
+
+        if let Some(delay) = DELAY_TIME.checked_sub(start.elapsed()) {
+            std::thread::sleep(delay);
+        }
     }
 }
 
