@@ -1,5 +1,6 @@
 use crate::font::FONT_ADDRESS;
 use crate::mem::Mem;
+use rand::{rngs::ThreadRng, Rng};
 use std::{io::Error, path::Path};
 
 pub const OPCODE_SIZE: u16 = 2;
@@ -19,6 +20,7 @@ pub struct Cpu {
     display: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
     keypad: [bool; 16],
     pub draw_flag: bool,
+    rng: ThreadRng,
 }
 
 impl Cpu {
@@ -38,6 +40,7 @@ impl Cpu {
             display: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             keypad: [false; 16],
             draw_flag: true,
+            rng: rand::thread_rng(),
         }
     }
 
@@ -241,7 +244,7 @@ impl Cpu {
 
     // RND Vx, byte
     fn op_cxnn(&mut self, x: usize, byte: u8) {
-        let random = rand::random::<u8>();
+        let random = self.rng.gen::<u8>();
 
         self.v_reg[x] = random & byte;
     }
