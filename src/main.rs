@@ -1,5 +1,5 @@
 use sdl2::event::Event;
-use sdl2::keyboard::Scancode;
+use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -26,6 +26,7 @@ fn main() {
         .unwrap();
     let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_ctx.event_pump().unwrap();
+    let mut ticks_per_frame = 10;
 
     canvas.set_draw_color(BG_COLOR);
     canvas.clear();
@@ -45,6 +46,20 @@ fn main() {
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'emu,
+                Event::KeyDown {
+                    keycode: Some(key), ..
+                } if key == Keycode::Up => {
+                    if ticks_per_frame < 25 {
+                        ticks_per_frame += 1
+                    }
+                }
+                Event::KeyDown {
+                    keycode: Some(key), ..
+                } if key == Keycode::Down => {
+                    if ticks_per_frame > 8 {
+                        ticks_per_frame -= 1
+                    }
+                }
                 Event::KeyDown { scancode, .. } => {
                     if let Some(key) = get_key(scancode) {
                         cpu.key_press(key);
@@ -58,6 +73,8 @@ fn main() {
                 _ => (),
             }
         }
+
+        // TODO: Add feedback when ticks_per_frame is changed
 
         if cpu.draw_flag {
             for (i, pixel) in cpu.display().iter().enumerate() {
@@ -74,7 +91,7 @@ fn main() {
             cpu.draw_flag = false;
         }
 
-        for _ in 0..10 {
+        for _ in 0..ticks_per_frame {
             cpu.tick();
         }
 
